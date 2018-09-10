@@ -1,6 +1,7 @@
 package service
 
 import (
+    "../dto"
     "encoding/json"
     "fmt"
     "io/ioutil"
@@ -8,7 +9,6 @@ import (
     "regexp"
     "strconv"
     "time"
-    "../dto"
 )
 
 type Weibo struct{
@@ -17,10 +17,9 @@ type Weibo struct{
     isRetweet bool
 }
 
-var dateExp = regexp.MustCompile(`\d+\-\d+\-\d+`)
-var dateExp2 = regexp.MustCompile(`\d+\-\d+`)
-
+//获取所有微博
 func GetAllWeibo(userid string) {
+    doc := CreateWord()
     page := 200
     for true {
         fmt.Printf("page:%d\n", page)
@@ -29,11 +28,20 @@ func GetAllWeibo(userid string) {
         if weiboArray == nil {
             break
         }
+        for _, weibo := range *weiboArray{
+            if !weibo.isRetweet {
+                CreateParaRun(doc, (*weibo.date).Format("2006-01-02"))
+                CreateParaRun(doc, weibo.text)
+                CreateBeark(doc)
+            }
+        }
         page++
         //fmt.Println(weiboArray)
     }
+    Save(doc, "D:\\" + userid + ".docx")
 }
 
+//请求weibo获取一页数据
 func qryOnePage(userid string, page int) (*[]Weibo, int) {
     //生成client 参数为默认
     client := &http.Client{}
@@ -76,6 +84,7 @@ func qryOnePage(userid string, page int) (*[]Weibo, int) {
     }
 }
 
+//解析微博返回的数据
 func parseWeibo(qryDto *dto.WeiboListQryRespDto) *[]Weibo {
     size := len(*qryDto.Data.Cards)
     if size == 0 {
@@ -95,15 +104,14 @@ func parseWeibo(qryDto *dto.WeiboListQryRespDto) *[]Weibo {
     return &weiboArray
 }
 
-func parseDate(date string) *time.Time{
-    result := dateExp.FindAllStringSubmatch(date, -1)
-    if result != nil {
+//日期解析
+func parseDate(date string) *time.Time {
+    var dateExp = regexp.MustCompile(`\d+\-\d+\-\d+`)
+    var dateExp2 = regexp.MustCompile(`\d+\-\d+`)
+    if dateExp.Match([]byte(date)) {
         weiboDate, _ := time.Parse("2006-01-02", date)
         return &weiboDate
-    }
-
-    result = dateExp2.FindAllStringSubmatch(date, -1)
-    if result != nil {
+    } else if dateExp2.Match([]byte(date)) {
         date = time.Now().Format("2006") + "-" + date
         weiboDate, _ := time.Parse("2006-01-02", date)
         return &weiboDate
@@ -112,6 +120,7 @@ func parseDate(date string) *time.Time{
     return nil
 }
 
+//过滤表情等
 func filterText(text *string) *string {
     pattenList := []string {
         `<span.+</span>`, `</a>`, `<a href.+>`}
