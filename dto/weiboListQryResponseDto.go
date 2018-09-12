@@ -55,6 +55,19 @@ type mblog struct {
 	Weibo_position int
 	Raw_text string
 	Bid string
+	Pics *[]pic
+}
+
+type pic struct {
+    Pid string
+    Url string
+    Size string
+    Large *largePic
+}
+
+type largePic struct {
+    Size string
+    Url string
 }
 
 type user struct {

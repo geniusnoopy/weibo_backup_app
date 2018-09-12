@@ -15,12 +15,14 @@ type Weibo struct{
     date *time.Time
     text string
     isRetweet bool
+    imgUrl *[]string
+    largeImgUrl *[]string
 }
 
 //获取所有微博
-func GetAllWeibo(userid string) {
+func GetAllWeibo(userid string, savePath string) {
     doc := CreateWord()
-    page := 200
+    page := 1
     for true {
         fmt.Printf("page:%d\n", page)
         weiboArray, nextpage := qryOnePage(userid, page)
@@ -30,22 +32,28 @@ func GetAllWeibo(userid string) {
         }
         for _, weibo := range *weiboArray{
             if !weibo.isRetweet {
-                CreateParaRun(doc, (*weibo.date).Format("2006-01-02"))
-                CreateParaRun(doc, weibo.text)
-                CreateBeark(doc)
+                run := CreateParaRun(doc)
+                run = AddText(doc, (*weibo.date).Format("2006-01-02"), run)
+                run = AddText(doc,"：", run)
+                run = AddText(doc, weibo.text, run)
+                if weibo.imgUrl != nil {
+                    for i, url := range *weibo.imgUrl {
+                        if i % 3 == 0 {
+                            run = AddBreak(doc, run)
+                        }
+                        run = AddImage(doc, url, run, savePath)
+                    }
+                }
+                run = AddBreak(doc, run)
             }
         }
         page++
-        //fmt.Println(weiboArray)
     }
-    Save(doc, "D:\\" + userid + ".docx")
+    Save(doc, savePath + userid + ".docx")
 }
 
 //请求weibo获取一页数据
 func qryOnePage(userid string, page int) (*[]Weibo, int) {
-    //生成client 参数为默认
-    client := &http.Client{}
-
     //生成要访问的url
     url := "https://m.weibo.cn/api/container/getIndex?" +
         "type=uid&value=" + userid +
@@ -54,17 +62,13 @@ func qryOnePage(userid string, page int) (*[]Weibo, int) {
         url = url + "&page=" + strconv.Itoa(page)
     }
 
-    //提交请求
-    reqest, err := http.NewRequest("GET", url, nil)
-    if err != nil {
-        panic(err)
-    }
-
     //处理返回结果
-    response, _ := client.Do(reqest)
+    response, _ := http.Get(url)
+    defer response.Body.Close()
+
     if 200 != response.StatusCode {
         fmt.Println(response.StatusCode)
-        panic("查询失败：" + string(response.StatusCode));
+        panic("查询失败：" + string(response.StatusCode))
     }
 
     body, err := ioutil.ReadAll(response.Body)
@@ -99,7 +103,25 @@ func parseWeibo(qryDto *dto.WeiboListQryRespDto) *[]Weibo {
         if card.Mblog.Retweeted_status != nil {
             weiboIsRetweet = true
         }
-        weiboArray[i] = Weibo{date : weiboDate, text : weiboText, isRetweet : weiboIsRetweet}
+
+        var weiboImgUrl *[]string = nil
+        var weiboLargeImgUrl *[]string = nil
+
+        if card.Mblog.Pics != nil {
+            ImgUrl := make([]string, len(*card.Mblog.Pics))
+            LargeImgUrl := make([]string, len(*card.Mblog.Pics))
+            for j, pic := range *card.Mblog.Pics {
+                ImgUrl[j] = pic.Url
+                LargeImgUrl[j] = pic.Large.Url
+            }
+            weiboImgUrl = &ImgUrl
+            weiboLargeImgUrl = &LargeImgUrl
+        }
+        weiboArray[i] = Weibo{date : weiboDate,
+            text : weiboText,
+            isRetweet : weiboIsRetweet,
+            imgUrl : weiboImgUrl,
+            largeImgUrl : weiboLargeImgUrl}
     }
     return &weiboArray
 }
@@ -123,7 +145,7 @@ func parseDate(date string) *time.Time {
 //过滤表情等
 func filterText(text *string) *string {
     pattenList := []string {
-        `<span.+</span>`, `</a>`, `<a href.+>`}
+        `<span.+</span>`, `</a>`, `<a +href.+>`, `<a +data.+>`, `<br />`}
     for _, patten := range pattenList {
         re, _ := regexp.Compile(patten)
         if re != nil {
